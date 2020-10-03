@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
+# Modified by The ZMK Contributors
 
-choice
+choice SYS_PM_POLICY
 	prompt "Idle State Power Management Policy"
 	help
 	  Select the idle state power management policy.
