@@ -73,6 +73,7 @@ enum {
 	ATT_PENDING_CFM,
 	ATT_DISCONNECTED,
 	ATT_ENHANCED,
+	ATT_PENDING_SENT,
 
 	/* Total number of flags - must be at the end of the enum */
 	ATT_NUM_FLAGS,
@@ -85,6 +86,7 @@ struct bt_att_chan {
 	struct bt_l2cap_le_chan	chan;
 	ATOMIC_DEFINE(flags, ATT_NUM_FLAGS);
 	struct bt_att_req	*req;
+	struct k_fifo		tx_queue;
 	struct k_delayed_work	timeout_work;
 	struct k_sem            tx_sem;
 	void (*sent)(struct bt_att_chan *chan);
@@ -128,6 +130,7 @@ static void att_req_destroy(struct bt_att_req *req)
 typedef void (*bt_att_chan_sent_t)(struct bt_att_chan *chan);
 
 static bt_att_chan_sent_t chan_cb(struct net_buf *buf);
+static bt_conn_tx_cb_t att_cb(bt_att_chan_sent_t cb);
 
 void att_sent(struct bt_conn *conn, void *user_data)
 {
@@ -149,10 +152,17 @@ static int chan_send(struct bt_att_chan *chan, struct net_buf *buf,
 
 	BT_DBG("code 0x%02x", hdr->code);
 
-	chan->sent = cb ? cb : chan_cb(buf);
-
 	if (IS_ENABLED(CONFIG_BT_EATT) &&
 	    atomic_test_bit(chan->flags, ATT_ENHANCED)) {
+		/* Check if sent is pending already, if it does it cannot be
+		 * modified so the operation will need to be queued.
+		 */
+		if (atomic_test_and_set_bit(chan->flags, ATT_PENDING_SENT)) {
+			return -EAGAIN;
+		}
+
+		chan->sent = cb ? cb : chan_cb(buf);
+
 		if (hdr->code == BT_ATT_OP_SIGNED_WRITE_CMD) {
 			return -ENOTSUP;
 		}
@@ -178,15 +188,64 @@ static int chan_send(struct bt_att_chan *chan, struct net_buf *buf,
 		}
 	}
 
+	chan->sent = cb ? cb : chan_cb(buf);
+
 	return bt_l2cap_send_cb(chan->att->conn, BT_L2CAP_CID_ATT, buf,
-				att_sent, &chan->chan.chan);
+				att_cb(chan->sent), &chan->chan.chan);
+}
+
+static int process_queue(struct bt_att_chan *chan, struct k_fifo *queue)
+{
+	struct net_buf *buf;
+	int err;
+
+	buf = net_buf_get(queue, K_NO_WAIT);
+	if (buf) {
+		err = chan_send(chan, buf, NULL);
+		if (err) {
+			/* Push it back if it could not be send */
+			k_queue_prepend(&queue->_queue, buf);
+			return err;
+		}
+
+		return 0;
+	}
+
+	return -ENOENT;
+}
+
+/* Send requests without taking tx_sem */
+static int chan_req_send(struct bt_att_chan *chan, struct bt_att_req *req)
+{
+	int err;
+
+	if (chan->chan.tx.mtu < net_buf_frags_len(req->buf)) {
+		return -EMSGSIZE;
+	}
+
+	BT_DBG("chan %p req %p len %zu", chan, req,
+	       net_buf_frags_len(req->buf));
+
+	chan->req = req;
+
+	/* Save request state so it can be resent */
+	net_buf_simple_save(&req->buf->b, &req->state);
+
+	/* Keep a reference for resending in case of an error */
+	err = chan_send(chan, net_buf_ref(req->buf), NULL);
+	if (err < 0) {
+		net_buf_unref(req->buf);
+		chan->req = NULL;
+	}
+
+	return err;
 }
 
 static void bt_att_sent(struct bt_l2cap_chan *ch)
 {
 	struct bt_att_chan *chan = ATT_CHAN(ch);
 	struct bt_att *att = chan->att;
-	struct net_buf *buf;
+	int err;
 
 	BT_DBG("chan %p", chan);
 
@@ -194,20 +253,33 @@ static void bt_att_sent(struct bt_l2cap_chan *ch)
 		chan->sent(chan);
 	}
 
-	while ((buf = net_buf_get(&att->tx_queue, K_NO_WAIT))) {
-		/* Check if the queued buf is a request */
-		if (chan->req && chan->req->buf == buf) {
-			/* Save request state so it can be resent */
-			net_buf_simple_save(&chan->req->buf->b,
-					    &chan->req->state);
+	atomic_clear_bit(chan->flags, ATT_PENDING_SENT);
+
+	/* Process pending requests first since they require a response they
+	 * can only be processed one at time while if other queues were
+	 * processed before they may always contain a buffer starving the
+	 * request queue.
+	 */
+	if (!chan->req && !sys_slist_is_empty(&att->reqs)) {
+		sys_snode_t *node = sys_slist_get(&att->reqs);
+
+		if (chan_req_send(chan, ATT_REQ(node)) >= 0) {
+			return;
 		}
 
-		if (chan_send(chan, buf, NULL) < 0) {
-			/* Push it back if it could not be send */
-			k_queue_prepend(&att->tx_queue._queue, buf);
-			break;
-		}
+		/* Prepend back to the list as it could not be sent */
+		sys_slist_prepend(&att->reqs, node);
+	}
 
+	/* Process channel queue */
+	err = process_queue(chan, &chan->tx_queue);
+	if (!err) {
+		return;
+	}
+
+	/* Process global queue */
+	err = process_queue(chan, &att->tx_queue);
+	if (!err) {
 		return;
 	}
 
@@ -254,6 +326,55 @@ static bt_att_chan_sent_t chan_cb(struct net_buf *buf)
 		return chan_req_sent;
 	default:
 		return NULL;
+	}
+}
+
+static void att_cfm_sent(struct bt_conn *conn, void *user_data)
+{
+	struct bt_l2cap_chan *ch = user_data;
+	struct bt_att_chan *chan = ATT_CHAN(ch);
+
+	BT_DBG("conn %p chan %p", conn, chan);
+
+	chan->sent = chan_cfm_sent;
+
+	att_sent(conn, user_data);
+}
+
+static void att_rsp_sent(struct bt_conn *conn, void *user_data)
+{
+	struct bt_l2cap_chan *ch = user_data;
+	struct bt_att_chan *chan = ATT_CHAN(ch);
+
+	BT_DBG("conn %p chan %p", conn, chan);
+
+	chan->sent = chan_rsp_sent;
+
+	att_sent(conn, user_data);
+}
+
+static void att_req_sent(struct bt_conn *conn, void *user_data)
+{
+	struct bt_l2cap_chan *ch = user_data;
+	struct bt_att_chan *chan = ATT_CHAN(ch);
+
+	BT_DBG("conn %p chan %p", conn, chan);
+
+	chan->sent = chan_req_sent;
+
+	att_sent(conn, user_data);
+}
+
+static bt_conn_tx_cb_t att_cb(bt_att_chan_sent_t cb)
+{
+	if (cb == chan_rsp_sent) {
+		return att_rsp_sent;
+	} else if (cb == chan_cfm_sent) {
+		return att_cfm_sent;
+	} else if (cb == chan_req_sent) {
+		return att_req_sent;
+	} else {
+		return att_sent;
 	}
 }
 
@@ -316,6 +437,18 @@ static int bt_att_chan_send(struct bt_att_chan *chan, struct net_buf *buf,
 	return chan_send(chan, buf, cb);
 }
 
+static void bt_att_chan_send_rsp(struct bt_att_chan *chan, struct net_buf *buf,
+				 bt_att_chan_sent_t cb)
+{
+	int err;
+
+	err = bt_att_chan_send(chan, buf, cb);
+	if (err) {
+		/* Responses need to be sent back using the same channel */
+		net_buf_put(&chan->tx_queue, buf);
+	}
+}
+
 static void send_err_rsp(struct bt_att_chan *chan, u8_t req, u16_t handle,
 			 u8_t err)
 {
@@ -337,7 +470,7 @@ static void send_err_rsp(struct bt_att_chan *chan, u8_t req, u16_t handle,
 	rsp->handle = sys_cpu_to_le16(handle);
 	rsp->error = err;
 
-	(void)bt_att_chan_send(chan, buf, chan_rsp_sent);
+	bt_att_chan_send_rsp(chan, buf, chan_rsp_sent);
 }
 
 static u8_t att_mtu_req(struct bt_att_chan *chan, struct net_buf *buf)
@@ -378,7 +511,7 @@ static u8_t att_mtu_req(struct bt_att_chan *chan, struct net_buf *buf)
 	rsp = net_buf_add(pdu, sizeof(*rsp));
 	rsp->mtu = sys_cpu_to_le16(mtu_server);
 
-	(void)bt_att_chan_send(chan, pdu, chan_rsp_sent);
+	bt_att_chan_send_rsp(chan, pdu, chan_rsp_sent);
 
 	/* BLUETOOTH SPECIFICATION Version 4.2 [Vol 3, Part F] page 484:
 	 *
@@ -404,29 +537,13 @@ static int bt_att_chan_req_send(struct bt_att_chan *chan,
 
 	BT_DBG("req %p", req);
 
-	if (chan->chan.tx.mtu < net_buf_frags_len(req->buf)) {
-		return -EMSGSIZE;
-	}
-
 	if (k_sem_take(&chan->tx_sem, K_NO_WAIT) < 0) {
 		return -EAGAIN;
 	}
 
-	BT_DBG("chan %p req %p len %zu", chan, req,
-	       net_buf_frags_len(req->buf));
-
-	chan->req = req;
-
-	/* Save request state so it can be resent */
-	net_buf_simple_save(&req->buf->b, &req->state);
-
-	/* Keep a reference for resending in case of an error */
-	err = chan_send(chan, net_buf_ref(req->buf), NULL);
+	err = chan_req_send(chan, req);
 	if (err < 0) {
-		net_buf_unref(req->buf);
-		req->buf = NULL;
 		k_sem_give(&chan->tx_sem);
-		chan->req = NULL;
 	}
 
 	return err;
@@ -644,7 +761,7 @@ static u8_t att_find_info_rsp(struct bt_att_chan *chan, u16_t start_handle,
 		return 0;
 	}
 
-	(void)bt_att_chan_send(chan, data.buf, chan_rsp_sent);
+	bt_att_chan_send_rsp(chan, data.buf, chan_rsp_sent);
 
 	return 0;
 }
@@ -807,7 +924,7 @@ static u8_t att_find_type_rsp(struct bt_att_chan *chan, u16_t start_handle,
 		return 0;
 	}
 
-	(void)bt_att_chan_send(chan, data.buf, chan_rsp_sent);
+	bt_att_chan_send_rsp(chan, data.buf, chan_rsp_sent);
 
 	return 0;
 }
@@ -1038,7 +1155,7 @@ static u8_t att_read_type_rsp(struct bt_att_chan *chan, struct bt_uuid *uuid,
 		return 0;
 	}
 
-	(void)bt_att_chan_send(chan, data.buf, chan_rsp_sent);
+	bt_att_chan_send_rsp(chan, data.buf, chan_rsp_sent);
 
 	return 0;
 }
@@ -1157,7 +1274,7 @@ static u8_t att_read_rsp(struct bt_att_chan *chan, u8_t op, u8_t rsp,
 		return 0;
 	}
 
-	(void)bt_att_chan_send(chan, data.buf, chan_rsp_sent);
+	bt_att_chan_send_rsp(chan, data.buf, chan_rsp_sent);
 
 	return 0;
 }
@@ -1235,7 +1352,7 @@ static u8_t att_read_mult_req(struct bt_att_chan *chan, struct net_buf *buf)
 		}
 	}
 
-	(void)bt_att_chan_send(chan, data.buf, chan_rsp_sent);
+	bt_att_chan_send_rsp(chan, data.buf, chan_rsp_sent);
 
 	return 0;
 }
@@ -1322,7 +1439,7 @@ static u8_t att_read_mult_vl_req(struct bt_att_chan *chan, struct net_buf *buf)
 		}
 	}
 
-	(void)bt_att_chan_send(chan, data.buf, chan_rsp_sent);
+	bt_att_chan_send_rsp(chan, data.buf, chan_rsp_sent);
 
 	return 0;
 }
@@ -1438,7 +1555,7 @@ static u8_t att_read_group_rsp(struct bt_att_chan *chan, struct bt_uuid *uuid,
 		return 0;
 	}
 
-	(void)bt_att_chan_send(chan, data.buf, chan_rsp_sent);
+	bt_att_chan_send_rsp(chan, data.buf, chan_rsp_sent);
 
 	return 0;
 }
@@ -1581,7 +1698,7 @@ static u8_t att_write_rsp(struct bt_att_chan *chan, u8_t req, u8_t rsp,
 	}
 
 	if (data.buf) {
-		(void)bt_att_chan_send(chan, data.buf, chan_rsp_sent);
+		bt_att_chan_send_rsp(chan, data.buf, chan_rsp_sent);
 	}
 
 	return 0;
@@ -1705,7 +1822,7 @@ static u8_t att_prep_write_rsp(struct bt_att_chan *chan, u16_t handle,
 	net_buf_add(data.buf, len);
 	memcpy(rsp->value, value, len);
 
-	(void)bt_att_chan_send(chan, data.buf, chan_rsp_sent);
+	bt_att_chan_send_rsp(chan, data.buf, chan_rsp_sent);
 
 	return 0;
 }
@@ -1768,7 +1885,7 @@ static u8_t att_exec_write_rsp(struct bt_att_chan *chan, u8_t flags)
 		return BT_ATT_ERR_UNLIKELY;
 	}
 
-	(void)bt_att_chan_send(chan, buf, chan_rsp_sent);
+	bt_att_chan_send_rsp(chan, buf, chan_rsp_sent);
 
 	return 0;
 }
@@ -2054,7 +2171,7 @@ static u8_t att_indicate(struct bt_att_chan *chan, struct net_buf *buf)
 		return 0;
 	}
 
-	(void)bt_att_chan_send(chan, buf, chan_cfm_sent);
+	bt_att_chan_send_rsp(chan, buf, chan_cfm_sent);
 
 	return 0;
 }
@@ -2383,12 +2500,12 @@ static void att_reset(struct bt_att *att)
 
 #if CONFIG_BT_ATT_PREPARE_COUNT > 0
 	/* Discard queued buffers */
-	while ((buf = k_fifo_get(&att->prep_queue, K_NO_WAIT))) {
+	while ((buf = net_buf_get(&att->prep_queue, K_NO_WAIT))) {
 		net_buf_unref(buf);
 	}
 #endif /* CONFIG_BT_ATT_PREPARE_COUNT > 0 */
 
-	while ((buf = k_fifo_get(&att->tx_queue, K_NO_WAIT))) {
+	while ((buf = net_buf_get(&att->tx_queue, K_NO_WAIT))) {
 		net_buf_unref(buf);
 	}
 
@@ -2409,6 +2526,7 @@ static void att_reset(struct bt_att *att)
 
 static void att_chan_detach(struct bt_att_chan *chan)
 {
+	struct net_buf *buf;
 	int i;
 
 	BT_DBG("chan %p", chan);
@@ -2418,6 +2536,11 @@ static void att_chan_detach(struct bt_att_chan *chan)
 	/* Ensure that any waiters are woken up */
 	for (i = 0; i < CONFIG_BT_ATT_TX_MAX; i++) {
 		k_sem_give(&chan->tx_sem);
+	}
+
+	/* Release pending buffers */
+	while ((buf = net_buf_get(&chan->tx_queue, K_NO_WAIT))) {
+		net_buf_unref(buf);
 	}
 
 	if (chan->req) {
@@ -2557,8 +2680,8 @@ static void bt_att_encrypt_change(struct bt_l2cap_chan *chan,
 	BT_DBG("Retrying");
 
 	/* Resend buffer */
-	(void)bt_att_chan_send(att_chan, att_chan->req->buf,
-			 chan_cb(att_chan->req->buf));
+	bt_att_chan_send_rsp(att_chan, att_chan->req->buf,
+			     chan_cb(att_chan->req->buf));
 
 	att_chan->req->buf = NULL;
 }
@@ -2637,6 +2760,7 @@ static struct bt_att_chan *att_chan_new(struct bt_att *att, atomic_val_t flags)
 
 	(void)memset(chan, 0, sizeof(*chan));
 	chan->chan.chan.ops = &ops;
+	k_fifo_init(&chan->tx_queue);
 	k_sem_init(&chan->tx_sem, CONFIG_BT_ATT_TX_MAX, CONFIG_BT_ATT_TX_MAX);
 	atomic_set(chan->flags, flags);
 	chan->att = att;
@@ -2830,8 +2954,8 @@ int bt_att_send(struct bt_conn *conn, struct net_buf *buf, bt_conn_tx_cb_t cb,
 	 * cannot be used with a custom user_data.
 	 */
 	if (cb) {
-		bt_l2cap_send_cb(conn, BT_L2CAP_CID_ATT, buf, cb, user_data);
-		return 0;
+		return bt_l2cap_send_cb(conn, BT_L2CAP_CID_ATT, buf, cb,
+					user_data);
 	}
 
 	ret = 0;
@@ -2846,7 +2970,7 @@ int bt_att_send(struct bt_conn *conn, struct net_buf *buf, bt_conn_tx_cb_t cb,
 	if (ret < 0) {
 		/* Queue buffer to be send later */
 		BT_DBG("Queueing buffer %p", buf);
-		k_fifo_put(&att->tx_queue, buf);
+		net_buf_put(&att->tx_queue, buf);
 	}
 
 	return 0;
