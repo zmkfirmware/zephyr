@@ -271,7 +271,7 @@ config LVGL_INPUT_LONG_RESS_REPEAT_TIME
 	  Period in milliseconds after which a new trigger is generated
 	  for a long press
 
-choice
+choice LVGL_TXT_ENC
 	prompt "String character encoding"
 	default LVGL_TXT_ENC_ASCII
 
