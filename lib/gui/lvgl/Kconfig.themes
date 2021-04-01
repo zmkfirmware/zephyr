@@ -1,5 +1,6 @@
 # Copyright (c) 2018 Jan Van Winkel <jan.van_winkel@dxplore.eu>
 # Copyright (c) 2020 Teslabs Engineering S.L.
+# Copyright (c) 2021 The ZMK Contributors
 # SPDX-License-Identifier: Apache-2.0
 
 menu "Themes"
@@ -237,7 +238,7 @@ config LVGL_THEME_DEFAULT_COLOR_SECONDARY_CUSTOM_BLUE
 
 endif # LVGL_THEME_DEFAULT_COLOR_SECONDARY_CUSTOM
 
-choice
+choice LVGL_THEME_DEFAULT_FONT_SMALL
 	prompt "Default theme small font"
 	default LVGL_THEME_DEFAULT_FONT_SMALL_UNSCII_8
 
@@ -354,7 +355,7 @@ choice
 
 endchoice
 
-choice
+choice LVGL_THEME_DEFAULT_FONT_NORMAL
 	prompt "Default theme normal font"
 	default LVGL_THEME_DEFAULT_FONT_NORMAL_UNSCII_8
 
@@ -471,7 +472,7 @@ choice
 
 endchoice
 
-choice
+choice LVGL_THEME_DEFAULT_FONT_SUBTITLE
 	prompt "Default theme subtitle font"
 	default LVGL_THEME_DEFAULT_FONT_SUBTITLE_UNSCII_8
 
@@ -588,7 +589,7 @@ choice
 
 endchoice
 
-choice
+choice LVGL_THEME_DEFAULT_FONT_TITLE
 	prompt "Default theme title font"
 	default LVGL_THEME_DEFAULT_FONT_TITLE_UNSCII_8
 
