@@ -1,0 +1,12 @@
+identifier: adafruit_qt_py_rp2040
+name: RaspberryPi-Pico
+type: mcu
+arch: arm
+flash: 8192
+ram: 264
+toolchain:
+  - zephyr
+  - gnuarmemb
+  - xtools
+supported:
+  - serial
