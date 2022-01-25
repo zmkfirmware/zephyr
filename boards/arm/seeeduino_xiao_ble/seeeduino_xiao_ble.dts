@@ -1,0 +1,150 @@
+/*
+ * Copyright (c) 2022 Peter Johanson
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+/dts-v1/;
+#include <nordic/nrf52840_qiaa.dtsi>
+#include "seeed_xiao_connector.dtsi"
+
+/ {
+	model = "Seeeduino XIAO BLE";
+	compatible = "seeed,xiao_ble";
+
+	chosen {
+		zephyr,console = &uart0;
+		zephyr,shell-uart = &uart0;
+		zephyr,uart-mcumgr = &uart0;
+		zephyr,bt-mon-uart = &uart0;
+		zephyr,bt-c2h-uart = &uart0;
+		zephyr,sram = &sram0;
+		zephyr,flash = &flash0;
+		zephyr,code-partition = &code_partition;
+	};
+
+	/* These aliases are provided for compatibility with samples */
+	aliases {
+		led0 = &led0;
+		led1 = &led1;
+		led2 = &led2;
+	};
+
+	leds {
+		compatible = "gpio-leds";
+		led0: led_0 {
+			gpios = <&gpio0 26 0>;
+			label = "Red LED";
+		};
+		led1: led_1 {
+			gpios = <&gpio0 30 0>;
+			label = "Blue LED";
+		};
+		led2: led_2 {
+			gpios = <&gpio0 6 0>;
+			label = "Green LED";
+		};
+	};
+};
+
+&gpiote {
+	status = "okay";
+};
+
+&gpio0 {
+	status = "okay";
+};
+
+&gpio1 {
+	status = "okay";
+};
+
+&uart0 {
+	status = "okay";
+	compatible = "nordic,nrf-uart";
+	current-speed = <115200>;
+	tx-pin = <43>;
+	rx-pin = <44>;
+};
+
+&i2c0 {
+	compatible = "nordic,nrf-twi";
+	sda-pin = <4>;
+	scl-pin = <5>;
+};
+
+&spi2 {
+	compatible = "nordic,nrf-spi";
+	mosi-pin = <47>;
+	miso-pin = <46>;
+	sck-pin = <45>;
+};
+
+zephyr_udc0: &usbd {
+	compatible = "nordic,nrf-usbd";
+	status = "okay";
+};
+
+&qspi {
+        status = "okay";
+        sck-pin = <21>;
+        io-pins = <20>, <24>, <22>, <23>;
+        csn-pins = <25>;
+	// TODO: VERIFY THESE!
+        gd25q16: gd25q16@0 {
+                /* NOTE: Quad mode not supported as driver does not handle
+                 * QE bit setting in SR2. Ref. GD25Q16C, Rev 3.0, p. 12.
+                 */
+                compatible = "nordic,qspi-nor";
+                reg = <0>;
+                writeoc = "pp2o";
+                readoc = "read2io";
+                sck-frequency = <16000000>;
+                label = "GD25Q16";
+                jedec-id = [c8 40 15];
+                size = <2097152>;
+                has-dpd;
+                t-enter-dpd = <20000>;
+                t-exit-dpd = <20000>;
+        };
+};
+
+
+&flash0 {
+
+	partitions {
+		compatible = "fixed-partitions";
+		#address-cells = <1>;
+		#size-cells = <1>;
+
+		sd_partition: partition@0 {
+			label = "softdevice";
+			reg = <0x00000000 0x00026000>;
+		};
+
+		code_partition: partition@27000 {
+			label = "code_partition";
+			reg = <0x00027000 0x000c5000>;
+		};
+
+		/*
+		 * The flash starting at 0x000ec000 and ending at
+		 * 0x000f3fff is reserved for use by the application.
+		 */
+
+		/*
+		 * Storage partition will be used by FCB/LittleFS/NVS
+		 * if enabled.
+		 */
+		storage_partition: partition@ec000 {
+			label = "storage";
+			reg = <0x000ec000 0x00008000>;
+		};
+
+		boot_partition: partition@f4000 {
+			label = "adafruit_boot";
+			reg = <0x000f4000 0x0000c000>;
+		};
+	};
+};
+
