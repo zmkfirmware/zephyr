@@ -1,0 +1,12 @@
+identifier: seeeduino_xiao_ble_nrf52840
+name: Seeeduino Xiao BLE nRF52840
+type: mcu
+arch: arm
+toolchain:
+  - zephyr
+  - gnuarmemb
+  - xtools
+ram: 256
+flash: 1024
+supported:
+  - xiao_serial
