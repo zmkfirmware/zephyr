@@ -13,10 +13,13 @@
  * for the Raspberry Pi RP2040 family processor.
  */
 
+#include <stdio.h>
+
 #include <zephyr/kernel.h>
 #include <zephyr/init.h>
 #include <zephyr/arch/arm/aarch32/cortex_m/cmsis.h>
 #include <zephyr/logging/log.h>
+#include <zephyr/fatal.h>
 
 #include <hardware/regs/resets.h>
 #include <hardware/clocks.h>
@@ -73,6 +76,20 @@ static int rp2040_init(const struct device *arg)
 	irq_unlock(key);
 
 	return 0;
+}
+
+/*
+ * Some pico-sdk drivers call panic on fatal error.
+ * This alternative implementation of panic handles the panic
+ * through Zephyr.
+ */
+void __attribute__((noreturn)) panic(const char *fmt, ...)
+{
+	va_list args;
+
+	va_start(args, fmt);
+	vprintf(fmt, args);
+	k_fatal_halt(K_ERR_CPU_EXCEPTION);
 }
 
 SYS_INIT(rp2040_init, PRE_KERNEL_1, 0);
