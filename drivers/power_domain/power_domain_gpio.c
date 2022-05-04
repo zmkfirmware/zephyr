@@ -51,11 +51,11 @@ static int pd_gpio_pm_action(const struct device *dev,
 		LOG_DBG("%s is now ON", dev->name);
 
 		/* Notify supported devices they are now powered */
-		pm_device_children_action_run(dev, PM_DEVICE_ACTION_TURN_ON, NULL);
+		pm_device_children_action_run(dev, action, NULL);
 		break;
 	case PM_DEVICE_ACTION_SUSPEND:
 		/* Notify supported devices power is going down */
-		pm_device_children_action_run(dev, PM_DEVICE_ACTION_TURN_OFF, NULL);
+		pm_device_children_action_run(dev, action, NULL);
 
 		if(cfg->off_on_delay_us > 0) {
 			k_sleep(K_USEC(cfg->off_on_delay_us));
@@ -74,15 +74,23 @@ static int pd_gpio_pm_action(const struct device *dev,
 		}
 
 		LOG_DBG("%s is OFF and powered", dev->name);
+
+		/* Notify supported devices they are now powered */
+		pm_device_children_action_run(dev, action, NULL);
+
 		break;
 	case PM_DEVICE_ACTION_TURN_OFF:
-		/* Let the enable pin float while device is not powered */
-		if(cfg->startup_delay_us > 0) {
-			k_sleep(K_USEC(cfg->startup_delay_us));
+		/* Notify supported devices power is going down */
+		pm_device_children_action_run(dev, action, NULL);
+
+		if(cfg->off_on_delay_us > 0) {
+			k_sleep(K_USEC(cfg->off_on_delay_us));
 		}
 
+		/* Let the enable pin float while device is not powered */
 		gpio_pin_configure_dt(&cfg->enable, GPIO_DISCONNECTED);
 		LOG_DBG("%s is OFF and not powered", dev->name);
+
 		break;
 	default:
 		rc = -ENOTSUP;
