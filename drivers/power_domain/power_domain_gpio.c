@@ -36,6 +36,8 @@ const char *actions[] = {
 static int pd_gpio_pm_action(const struct device *dev,
 			     enum pm_device_action action)
 {
+	LOG_DBG("In pd_gpio_pm_action for power domain %s with action: %s", dev->name, pm_device_action_str(action));
+
 	const struct pd_gpio_config *cfg = dev->config;
 	int rc = 0;
 

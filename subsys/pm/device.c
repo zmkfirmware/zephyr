@@ -25,6 +25,24 @@ const char *pm_device_state_str(enum pm_device_state state)
 	}
 }
 
+const char *pm_device_action_str(enum pm_device_action action)
+{
+	switch (action) {
+	case PM_DEVICE_ACTION_SUSPEND:
+		return "suspend";
+	case PM_DEVICE_ACTION_RESUME:
+		return "resume";
+	case PM_DEVICE_ACTION_TURN_OFF:
+		return "turn_off";
+	case PM_DEVICE_ACTION_TURN_ON:
+		return "turn_on";
+	case PM_DEVICE_ACTION_FORCE_SUSPEND:
+		return "force_suspend";
+	default:
+		return "unknown_action";
+	}
+}
+
 int pm_device_state_set(const struct device *dev,
 			enum pm_device_state state)
 {

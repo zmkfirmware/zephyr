@@ -315,6 +315,13 @@ struct pm_device {
 const char *pm_device_state_str(enum pm_device_state state);
 
 /**
+ * @brief Get name of device PM action
+ *
+ * @param action Action id which name should be returned
+ */
+const char *pm_device_action_str(enum pm_device_action action);
+
+/**
  * @brief Set the power state of a device.
  *
  * @deprecated Use pm_device_action_run() instead.
