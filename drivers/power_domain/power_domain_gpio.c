@@ -67,7 +67,7 @@ static int pd_gpio_pm_action(const struct device *dev,
 		break;
 	case PM_DEVICE_ACTION_TURN_ON:
 		/* Actively control the enable pin now that the device is powered */
-		gpio_pin_configure_dt(&cfg->enable, GPIO_OUTPUT_INACTIVE);
+		gpio_pin_set_dt(&cfg->enable, 1);
 
 		if(cfg->startup_delay_us > 0) {
 			k_sleep(K_USEC(cfg->startup_delay_us));
@@ -88,7 +88,8 @@ static int pd_gpio_pm_action(const struct device *dev,
 		}
 
 		/* Let the enable pin float while device is not powered */
-		gpio_pin_configure_dt(&cfg->enable, GPIO_DISCONNECTED);
+		gpio_pin_set_dt(&cfg->enable, 0);
+
 		LOG_DBG("%s is OFF and not powered", dev->name);
 
 		break;
