@@ -13,7 +13,7 @@
 #include <pm/device_runtime.h>
 
 #include <logging/log.h>
-LOG_MODULE_REGISTER(power_domain_gpio, LOG_LEVEL_INF);
+LOG_MODULE_REGISTER(power_domain_gpio, CONFIG_PM_DEVICE_LOG_LEVEL);
 
 struct pd_gpio_config {
 	struct gpio_dt_spec enable;
@@ -104,6 +104,8 @@ static int pd_gpio_pm_action(const struct device *dev,
 
 static int pd_gpio_init(const struct device *dev)
 {
+	LOG_DBG("Initing power-domain-gpio: %s", dev->name);
+
 	const struct pd_gpio_config *cfg = dev->config;
 	int rc;
 
@@ -116,12 +118,18 @@ static int pd_gpio_init(const struct device *dev)
 		/* Device is unpowered */
 		pm_device_runtime_init_off(dev);
 		rc = gpio_pin_configure_dt(&cfg->enable, GPIO_DISCONNECTED);
+		if(rc != 0) {
+			LOG_WRN("Could not configure pin to GPIO_DISCONNECTED: %d", rc);
+		}
 	} else {
 		pm_device_runtime_init_suspended(dev);
 		rc = gpio_pin_configure_dt(&cfg->enable, GPIO_OUTPUT_INACTIVE);
+		if(rc != 0) {
+			LOG_WRN("Could not configure pin to GPIO_OUTPUT_INACTIVE: %d", rc);
+		}
 	}
 
-	return rc;
+	return 0;
 }
 
 #define POWER_DOMAIN_DEVICE(id)						   \
