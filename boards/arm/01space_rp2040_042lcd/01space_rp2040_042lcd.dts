@@ -1,0 +1,111 @@
+/*
+ * Copyright (c) 2021 Yonatan Schachter
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+/dts-v1/;
+
+#include <rpi_pico/rp2040.dtsi>
+#include "01space_rp2040_042lcd-pinctl.dtsi"
+#include "seeed_xiao_connector.dtsi"
+#include <freq.h>
+
+/ {
+	model = "01Space RP2040-0.42LCD";
+	compatible = "zeroonespace,rp2040-0.42lcd", "raspberrypi,rp2040";
+
+	chosen {
+		zephyr,sram = &sram0;
+		zephyr,flash = &flash0;
+		zephyr,console = &uart1;
+		zephyr,code-partition = &code_partition;
+		zephyr,display = &ssd1306;
+	};
+
+	xtal_clk: xtal-clk {
+		compatible = "fixed-clock";
+		clock-frequency = <12000000>;
+		#clock-cells = <0>;
+	};
+
+
+	/* These aliases are provided for compatibility with samples */
+	aliases {
+	};
+};
+
+&flash0 {
+	/* 2MB of flash minus the 0x100 used for
+	 * the second stage bootloader
+	 */
+	reg = <0x10000000 DT_SIZE_M(2)>;
+
+	partitions {
+		compatible = "fixed-partitions";
+		#address-cells = <1>;
+		#size-cells = <1>;
+
+		/* Reserved memory for the second stage bootloader */
+		second_stage_bootloader: partition@0 {
+			label = "second_stage_bootloader";
+			reg = <0x00000000 0x100>;
+			read-only;
+		};
+
+		/*
+		 * Usable flash. Starts at 0x100, after the bootloader. The partition
+		 * size is 2MB minus the 0x100 bytes taken by the bootloader.
+		 */
+		code_partition: partition@100 {
+			label = "code";
+			reg = <0x100 (DT_SIZE_M(2) - 0x100)>;
+			read-only;
+		};
+	};
+};
+
+&uart1 {
+	current-speed = <115200>;
+	status = "okay";
+	pinctrl-0 = <&uart1_default>;
+	pinctrl-names = "default";
+};
+
+&spi0 {
+	status = "okay";
+	pinctrl-0 = <&spi0_default>;
+	pinctrl-names = "default";
+	clock-frequency = <DT_FREQ_M(2)>;
+};
+
+&i2c1 {
+	status = "okay";
+	pinctrl-0 = <&i2c1_default>;
+	pinctrl-names = "default";
+	clock-frequency = <I2C_BITRATE_FAST>;
+
+	ssd1306: ssd1306@3c {
+		compatible = "solomon,ssd1306fb";
+		reg = <0x3c>;
+		label = "SSD1306";
+		width = <72>;
+		height = <40>;
+		segment-offset = <28>;
+		page-offset = <0>;
+		display-offset = <0>;
+		multiplex-ratio = <0x27>;
+		segment-remap;
+		com-invdir;
+		prechargep = <0x22>;
+	};
+};
+
+
+&gpio0 {
+	status = "okay";
+};
+
+zephyr_udc0: &usbd {
+	status = "okay";
+};
