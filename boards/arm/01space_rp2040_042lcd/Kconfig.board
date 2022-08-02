@@ -1,0 +1,6 @@
+# Copyright (c) 2021 Pete Johanson
+# SPDX-License-Identifier: Apache-2.0
+
+config BOARD_01SPACE_RP2040_042LCD
+	bool "01Space RP2040-0.42LCD"
+	depends on SOC_RP2040
