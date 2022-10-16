@@ -21,6 +21,8 @@ manifest:
   remotes:
     - name: upstream
       url-base: https://github.com/zephyrproject-rtos
+    - name: zmkfirmware
+      url-base: https://github.com/zmkfirmware
 
   #
   # Please add items below based on alphabetical order
@@ -171,8 +173,9 @@ manifest:
       revision: ce57712f3e426bbbb13acaec97b45369f716f43a
       path: modules/lib/loramac-node
     - name: lvgl
-      revision: af95bdfcf6784edd958ea08139c713e2d3dee7af
+      revision: 70a7849726be8375e3d941153dc417823ea7f355
       path: modules/lib/gui/lvgl
+      remote: zmkfirmware
     - name: lz4
       revision: 8e303c264fc21c2116dc612658003a22e933124d
       path: modules/lib/lz4
