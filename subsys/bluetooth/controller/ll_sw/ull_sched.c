@@ -4,9 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <zephyr/kernel.h>
-
 #include <zephyr/sys/byteorder.h>
+#include <zephyr/bluetooth/hci.h>
 
 #include "hal/ccm.h"
 #include "hal/radio.h"
@@ -48,6 +47,7 @@
 #define LOG_MODULE_NAME bt_ctlr_ull_sched
 #include "common/log.h"
 #include "hal/debug.h"
+#include "ll_feat.h"
 
 #if defined(CONFIG_BT_CTLR_CONN_PARAM_REQ)
 #if defined(CONFIG_BT_LL_SW_LLCP_LEGACY)
@@ -876,7 +876,47 @@ static struct ull_hdr *ull_hdr_get_cb(uint8_t ticker_id, uint32_t *ticks_slot)
 
 		conn = ll_conn_get(ticker_id - TICKER_ID_CONN_BASE);
 		if (conn && !conn->lll.role) {
-			*ticks_slot = conn->ull.ticks_slot;
+			uint32_t ticks_slot_conn;
+
+			if (IS_ENABLED(CONFIG_BT_CTLR_CENTRAL_RESERVE_MAX)) {
+				uint32_t ready_delay_us;
+				uint16_t max_tx_time;
+				uint16_t max_rx_time;
+				uint32_t time_us;
+
+#if defined(CONFIG_BT_CTLR_PHY)
+				ready_delay_us =
+					lll_radio_tx_ready_delay_get(conn->lll.phy_tx,
+								     conn->lll.phy_flags);
+#else
+				ready_delay_us =
+					lll_radio_tx_ready_delay_get(0U, 0U);
+#endif
+
+#if defined(CONFIG_BT_CTLR_PHY_CODED)
+				max_tx_time = PDU_DC_MAX_US(LL_LENGTH_OCTETS_TX_MAX,
+							    PHY_CODED);
+				max_rx_time = PDU_DC_MAX_US(LL_LENGTH_OCTETS_RX_MAX,
+							    PHY_CODED);
+#else /* !CONFIG_BT_CTLR_PHY_CODED */
+				max_tx_time = PDU_DC_MAX_US(LL_LENGTH_OCTETS_TX_MAX,
+							    PHY_1M);
+				max_rx_time = PDU_DC_MAX_US(LL_LENGTH_OCTETS_RX_MAX,
+							    PHY_1M);
+#endif /* !CONFIG_BT_CTLR_PHY_CODED */
+
+				time_us = EVENT_OVERHEAD_START_US +
+					  ready_delay_us +  max_rx_time +
+					  EVENT_IFS_US + max_tx_time;
+				ticks_slot_conn =
+					HAL_TICKER_US_TO_TICKS(time_us);
+			} else {
+				ticks_slot_conn = conn->ull.ticks_slot;
+			}
+
+			*ticks_slot = MAX(ticks_slot_conn,
+				    HAL_TICKER_US_TO_TICKS(
+					    CONFIG_BT_CTLR_SCHED_ADVANCED_CENTRAL_CONN_SPACING));
 
 			return &conn->ull;
 		}
