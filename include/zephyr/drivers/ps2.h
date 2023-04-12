@@ -38,6 +38,18 @@ extern "C" {
 typedef void (*ps2_callback_t)(const struct device *dev, uint8_t data);
 
 /**
+ * @brief PS/2 callback that is called when the PS/2 driver detects a
+ * transmission error and instructs the PS/2 device to re-send the last PS/2
+ * packet. A PS/2 packet can be more than one byte and when the device is
+ * instructed to resend the last packet, it will resend all the bytes. This
+ * can cause the PS/2 driver to become misaligned. This callback lets the PS/2
+ * driver know that it should expect a resend of an entire packet.
+ *
+ * @param dev   Pointer to the device structure for the driver instance.
+ */
+typedef void (*ps2_resend_callback_t)(const struct device *dev);
+
+/**
  * @cond INTERNAL_HIDDEN
  *
  * PS2 driver API definition and system call entry points
@@ -45,7 +57,8 @@ typedef void (*ps2_callback_t)(const struct device *dev, uint8_t data);
  * (Internal use only.)
  */
 typedef int (*ps2_config_t)(const struct device *dev,
-			    ps2_callback_t callback_isr);
+			    ps2_callback_t callback_isr,
+				ps2_resend_callback_t resend_callback_isr);
 typedef int (*ps2_read_t)(const struct device *dev, uint8_t *value);
 typedef int (*ps2_write_t)(const struct device *dev, uint8_t value);
 typedef int (*ps2_disable_callback_t)(const struct device *dev);
@@ -73,15 +86,18 @@ __subsystem struct ps2_driver_api {
  * @retval Negative errno code if failure.
  */
 __syscall int ps2_config(const struct device *dev,
-			 ps2_callback_t callback_isr);
+			 ps2_callback_t callback_isr,
+			 ps2_resend_callback_t resend_callback_isr);
 
 static inline int z_impl_ps2_config(const struct device *dev,
-				    ps2_callback_t callback_isr)
+				    ps2_callback_t callback_isr,
+					ps2_resend_callback_t resend_callback_isr)
+
 {
 	const struct ps2_driver_api *api =
 				(struct ps2_driver_api *)dev->api;
 
-	return api->config(dev, callback_isr);
+	return api->config(dev, callback_isr, resend_callback_isr);
 }
 
 /**
