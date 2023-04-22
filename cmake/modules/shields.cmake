@@ -71,6 +71,10 @@ foreach(root ${BOARD_ROOT})
         continue()
       endif()
 
+      if(BOARD_DIR AND NOT (${root} STREQUAL ${ZEPHYR_BASE}))
+        set(SHIELD_${s}_OUT_OF_TREE 1)
+      endif()
+
       list(REMOVE_ITEM SHIELD-NOTFOUND ${s})
 
       # if shield config flag is on, add shield overlay to the shield overlays

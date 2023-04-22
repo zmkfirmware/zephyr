@@ -12,3 +12,17 @@ if(EXISTS ${BOARD_DIR}/CMakeLists.txt)
 
   add_subdirectory(${BOARD_DIR} ${build_dir})
 endif()
+
+if(DEFINED SHIELD)
+  foreach(s ${SHIELD_AS_LIST})
+    # search for shield/shield.conf file
+    if(EXISTS ${SHIELD_DIR_${s}}/CMakeLists.txt)
+      if(${SHIELD_${s}_OUT_OF_TREE})
+        set(build_dir shields/${s}/)
+      else()
+        unset(build_dir)
+      endif()
+      add_subdirectory(${SHIELD_DIR_${s}} ${build_dir})
+    endif()
+  endforeach()
+endif()
