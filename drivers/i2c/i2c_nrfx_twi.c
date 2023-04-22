@@ -228,10 +228,18 @@ static int twi_nrfx_pm_action(const struct device *dev,
 
 	switch (action) {
 	case PM_DEVICE_ACTION_RESUME:
+		LOG_DBG("Initializing i2c-twi...");
 		init_twi(dev);
 		if (data->dev_config) {
 			i2c_nrfx_twi_configure(dev, data->dev_config);
 		}
+
+		break;
+
+	case PM_DEVICE_ACTION_TURN_OFF:
+		// We don't want to uninit as it causes issues on re-init
+		// But we also don't want to return -ENOTSUP
+		// So we keep this empty.
 		break;
 
 	case PM_DEVICE_ACTION_SUSPEND:

@@ -15,6 +15,7 @@ LOG_MODULE_REGISTER(ssd1306, CONFIG_DISPLAY_LOG_LEVEL);
 #include <drivers/gpio.h>
 #include <drivers/i2c.h>
 #include <drivers/spi.h>
+#include <pm/device.h>
 
 #include "ssd1306_regs.h"
 #include <display/cfb.h>
@@ -425,6 +426,34 @@ static int ssd1306_init(const struct device *dev)
 	return 0;
 }
 
+#ifdef CONFIG_PM_DEVICE
+static int ssd1306_pm_action(const struct device *dev,
+			      enum pm_device_action action)
+{
+	int ret = 0;
+
+	switch (action) {
+		case PM_DEVICE_ACTION_RESUME:
+		    LOG_DBG("Initializing display...");
+			ssd1306_init(dev);
+
+			break;
+
+		case PM_DEVICE_ACTION_TURN_OFF:
+			// We don't need to do anything when turning off, but we also
+			// don't want to return -ENOTSUP
+			// So we keep this empty on purpose.
+			break;
+
+		default:
+			ret = -ENOTSUP;
+	}
+
+	return ret;
+}
+PM_DEVICE_DT_INST_DEFINE(0, ssd1306_pm_action);
+#endif /* CONFIG_PM_DEVICE */
+
 static const struct ssd1306_config ssd1306_config = {
 #if DT_INST_ON_BUS(0, i2c)
 	.bus = I2C_DT_SPEC_INST_GET(0),
@@ -451,7 +480,7 @@ static struct display_driver_api ssd1306_driver_api = {
 	.set_orientation = ssd1306_set_orientation,
 };
 
-DEVICE_DT_INST_DEFINE(0, ssd1306_init, NULL,
+DEVICE_DT_INST_DEFINE(0, ssd1306_init, PM_DEVICE_DT_INST_GET(0),
 		      &ssd1306_driver, &ssd1306_config,
 		      POST_KERNEL, CONFIG_DISPLAY_INIT_PRIORITY,
 		      &ssd1306_driver_api);

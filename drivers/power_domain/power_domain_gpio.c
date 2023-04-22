@@ -13,7 +13,7 @@
 #include <pm/device_runtime.h>
 
 #include <logging/log.h>
-LOG_MODULE_REGISTER(power_domain_gpio, LOG_LEVEL_INF);
+LOG_MODULE_REGISTER(power_domain_gpio, CONFIG_PM_DEVICE_LOG_LEVEL);
 
 struct pd_gpio_config {
 	struct gpio_dt_spec enable;
@@ -36,6 +36,8 @@ const char *actions[] = {
 static int pd_gpio_pm_action(const struct device *dev,
 			     enum pm_device_action action)
 {
+	LOG_DBG("In pd_gpio_pm_action for power domain %s with action: %s", dev->name, pm_device_action_str(action));
+
 	const struct pd_gpio_config *cfg = dev->config;
 	int rc = 0;
 
@@ -43,26 +45,55 @@ static int pd_gpio_pm_action(const struct device *dev,
 	case PM_DEVICE_ACTION_RESUME:
 		/* Switch power on */
 		gpio_pin_set_dt(&cfg->enable, 1);
+
+		if(cfg->startup_delay_us > 0) {
+			k_sleep(K_USEC(cfg->startup_delay_us));
+		}
+
 		LOG_DBG("%s is now ON", dev->name);
+
 		/* Notify supported devices they are now powered */
-		pm_device_children_action_run(dev, PM_DEVICE_ACTION_TURN_ON, NULL);
+		pm_device_children_action_run(dev, action, NULL);
 		break;
 	case PM_DEVICE_ACTION_SUSPEND:
 		/* Notify supported devices power is going down */
-		pm_device_children_action_run(dev, PM_DEVICE_ACTION_TURN_OFF, NULL);
+		pm_device_children_action_run(dev, action, NULL);
+
+		if(cfg->off_on_delay_us > 0) {
+			k_sleep(K_USEC(cfg->off_on_delay_us));
+		}
+
 		/* Switch power off */
 		gpio_pin_set_dt(&cfg->enable, 0);
 		LOG_DBG("%s is now OFF and powered", dev->name);
 		break;
 	case PM_DEVICE_ACTION_TURN_ON:
 		/* Actively control the enable pin now that the device is powered */
-		gpio_pin_configure_dt(&cfg->enable, GPIO_OUTPUT_INACTIVE);
+		gpio_pin_set_dt(&cfg->enable, 1);
+
+		if(cfg->startup_delay_us > 0) {
+			k_sleep(K_USEC(cfg->startup_delay_us));
+		}
+
 		LOG_DBG("%s is OFF and powered", dev->name);
+
+		/* Notify supported devices they are now powered */
+		pm_device_children_action_run(dev, action, NULL);
+
 		break;
 	case PM_DEVICE_ACTION_TURN_OFF:
+		/* Notify supported devices power is going down */
+		pm_device_children_action_run(dev, action, NULL);
+
+		if(cfg->off_on_delay_us > 0) {
+			k_sleep(K_USEC(cfg->off_on_delay_us));
+		}
+
 		/* Let the enable pin float while device is not powered */
-		gpio_pin_configure_dt(&cfg->enable, GPIO_DISCONNECTED);
+		gpio_pin_set_dt(&cfg->enable, 0);
+
 		LOG_DBG("%s is OFF and not powered", dev->name);
+
 		break;
 	default:
 		rc = -ENOTSUP;
@@ -73,6 +104,8 @@ static int pd_gpio_pm_action(const struct device *dev,
 
 static int pd_gpio_init(const struct device *dev)
 {
+	LOG_DBG("Initing power-domain-gpio: %s", dev->name);
+
 	const struct pd_gpio_config *cfg = dev->config;
 	int rc;
 
@@ -85,12 +118,18 @@ static int pd_gpio_init(const struct device *dev)
 		/* Device is unpowered */
 		pm_device_runtime_init_off(dev);
 		rc = gpio_pin_configure_dt(&cfg->enable, GPIO_DISCONNECTED);
+		if(rc != 0) {
+			LOG_WRN("Could not configure pin to GPIO_DISCONNECTED: %d", rc);
+		}
 	} else {
 		pm_device_runtime_init_suspended(dev);
 		rc = gpio_pin_configure_dt(&cfg->enable, GPIO_OUTPUT_INACTIVE);
+		if(rc != 0) {
+			LOG_WRN("Could not configure pin to GPIO_OUTPUT_INACTIVE: %d", rc);
+		}
 	}
 
-	return rc;
+	return 0;
 }
 
 #define POWER_DOMAIN_DEVICE(id)						   \
