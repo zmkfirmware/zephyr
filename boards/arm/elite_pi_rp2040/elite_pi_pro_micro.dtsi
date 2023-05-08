@@ -32,7 +32,7 @@
 			;
 	};
 	
-	elite_pi: connector {
+	elite_c: elite_c_connector {
 		compatible = "elite_c_connector";
 		#gpio-cells = <2>;
 		gpio-map-mask = <0xffffffff 0xffffffc0>;
