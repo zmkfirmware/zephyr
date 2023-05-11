@@ -6,7 +6,7 @@
 
 / {
 	pro_micro: connector {
-		compatible = "elite_pi,pro-micro";
+		compatible = "spark_fun,pro-micro-header";
 		#gpio-cells = <2>;
 		gpio-map-mask = <0xffffffff 0xffffffc0>;
 		gpio-map-pass-thru = <0 0x3f>;
