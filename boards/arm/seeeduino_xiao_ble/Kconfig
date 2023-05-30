@@ -8,3 +8,15 @@ config BOARD_ENABLE_DCDC
 	select SOC_DCDC_NRF52X
 	default y
 	depends on BOARD_SEEEDUINO_XIAO_BLE
+
+choice BOARD_CHARGE_RATE
+	prompt "LiPo Charge Rate"
+	depends on BOARD_SEEEDUINO_XIAO_BLE
+
+config BOARD_CHARGE_RATE_50MA
+	bool "50mA"
+
+config BOARD_CHARGE_RATE_100MA
+	bool "100mA"
+
+endchoice
