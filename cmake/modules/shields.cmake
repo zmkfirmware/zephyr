@@ -40,75 +40,76 @@ endif()
 # After processing all shields, only invalid shields will be left in this list.
 set(SHIELD-NOTFOUND ${SHIELD_AS_LIST})
 
-# Use BOARD to search for a '_defconfig' file.
-# e.g. zephyr/boards/arm/96b_carbon_nrf51/96b_carbon_nrf51_defconfig.
-# When found, use that path to infer the ARCH we are building for.
-foreach(root ${BOARD_ROOT})
-  set(shield_dir ${root}/boards/shields)
-  # Match the Kconfig.shield files in the shield directories to make sure we are
-  # finding shields, e.g. x_nucleo_iks01a1/Kconfig.shield
-  file(GLOB_RECURSE shields_refs_list ${shield_dir}/*/Kconfig.shield)
+if(DEFINED SHIELD)
+  foreach(s ${SHIELD_AS_LIST})
 
-  # The above gives a list like
-  # x_nucleo_iks01a1/Kconfig.shield;x_nucleo_iks01a2/Kconfig.shield
-  # we construct a list of shield names by extracting the folder and find
-  # and overlay files in there. Each overlay corresponds to a shield.
-  # We obtain the shield name by removing the overlay extension.
-  unset(SHIELD_LIST)
-  foreach(shields_refs ${shields_refs_list})
-    get_filename_component(shield_path ${shields_refs} DIRECTORY)
-    file(GLOB shield_overlays RELATIVE ${shield_path} ${shield_path}/*.overlay)
-    foreach(overlay ${shield_overlays})
-      get_filename_component(shield ${overlay} NAME_WE)
-      list(APPEND SHIELD_LIST ${shield})
-      set(SHIELD_DIR_${shield} ${shield_path})
+  # Use BOARD to search for a '_defconfig' file.
+  # e.g. zephyr/boards/arm/96b_carbon_nrf51/96b_carbon_nrf51_defconfig.
+  # When found, use that path to infer the ARCH we are building for.
+  foreach(root ${BOARD_ROOT})
+    set(shield_dir ${root}/boards/shields)
+    # Match the Kconfig.shield files in the shield directories to make sure we are
+    # finding shields, e.g. x_nucleo_iks01a1/Kconfig.shield
+    file(GLOB_RECURSE shields_refs_list ${shield_dir}/*/Kconfig.shield)
+  
+    # The above gives a list like
+    # x_nucleo_iks01a1/Kconfig.shield;x_nucleo_iks01a2/Kconfig.shield
+    # we construct a list of shield names by extracting the folder and find
+    # and overlay files in there. Each overlay corresponds to a shield.
+    # We obtain the shield name by removing the overlay extension.
+    unset(SHIELD_LIST)
+    foreach(shields_refs ${shields_refs_list})
+      get_filename_component(shield_path ${shields_refs} DIRECTORY)
+      file(GLOB shield_overlays RELATIVE ${shield_path} ${shield_path}/*.overlay)
+      foreach(overlay ${shield_overlays})
+        get_filename_component(shield ${overlay} NAME_WE)
+        list(APPEND SHIELD_LIST ${shield})
+        set(SHIELD_DIR_${shield} ${shield_path})
+      endforeach()
+    endforeach()
+
+    if(NOT ${s} IN_LIST SHIELD_LIST)
+      continue()
+    endif()
+
+    if(BOARD_DIR AND NOT (${root} STREQUAL ${ZEPHYR_BASE}))
+      set(SHIELD_${s}_OUT_OF_TREE 1)
+    endif()
+
+    list(REMOVE_ITEM SHIELD-NOTFOUND ${s})
+
+    # if shield config flag is on, add shield overlay to the shield overlays
+    # list and dts_fixup file to the shield fixup file
+    list(APPEND
+      shield_dts_files
+      ${SHIELD_DIR_${s}}/${s}.overlay
+      )
+
+    list(APPEND
+      SHIELD_DIRS
+      ${SHIELD_DIR_${s}}
+      )
+
+    # search for shield/shield.conf file
+    if(EXISTS ${SHIELD_DIR_${s}}/${s}.conf)
+      # add shield.conf to the shield config list
+      list(APPEND
+        shield_conf_files
+        ${SHIELD_DIR_${s}}/${s}.conf
+        )
+    endif()
+
+    zephyr_file(CONF_FILES ${SHIELD_DIR_${s}}/boards
+                DTS   shield_dts_files
+                KCONF shield_conf_files
+    )
+    zephyr_file(CONF_FILES ${SHIELD_DIR_${s}}/boards/${s}
+                DTS   shield_dts_files
+                KCONF shield_conf_files
+    )
     endforeach()
   endforeach()
-
-  if(DEFINED SHIELD)
-    foreach(s ${SHIELD_AS_LIST})
-      if(NOT ${s} IN_LIST SHIELD_LIST)
-        continue()
-      endif()
-
-      if(BOARD_DIR AND NOT (${root} STREQUAL ${ZEPHYR_BASE}))
-        set(SHIELD_${s}_OUT_OF_TREE 1)
-      endif()
-
-      list(REMOVE_ITEM SHIELD-NOTFOUND ${s})
-
-      # if shield config flag is on, add shield overlay to the shield overlays
-      # list and dts_fixup file to the shield fixup file
-      list(APPEND
-        shield_dts_files
-        ${SHIELD_DIR_${s}}/${s}.overlay
-        )
-
-      list(APPEND
-        SHIELD_DIRS
-        ${SHIELD_DIR_${s}}
-        )
-
-      # search for shield/shield.conf file
-      if(EXISTS ${SHIELD_DIR_${s}}/${s}.conf)
-        # add shield.conf to the shield config list
-        list(APPEND
-          shield_conf_files
-          ${SHIELD_DIR_${s}}/${s}.conf
-          )
-      endif()
-
-      zephyr_file(CONF_FILES ${SHIELD_DIR_${s}}/boards
-                  DTS   shield_dts_files
-                  KCONF shield_conf_files
-      )
-      zephyr_file(CONF_FILES ${SHIELD_DIR_${s}}/boards/${s}
-                  DTS   shield_dts_files
-                  KCONF shield_conf_files
-      )
-    endforeach()
-  endif()
-endforeach()
+endif()
 
 # Prepare shield usage command printing.
 # This command prints all shields in the system in the following cases:
