@@ -8,12 +8,16 @@
 #include <zephyr/syscall_handler.h>
 
 static inline int z_vrfy_ps2_config(const struct device *dev,
-				    ps2_callback_t callback_isr)
+				    ps2_callback_t callback_isr,
+					ps2_resend_callback_t resend_callback_isr)
+
 {
 	Z_OOPS(Z_SYSCALL_DRIVER_PS2(dev, config));
 	Z_OOPS(Z_SYSCALL_VERIFY_MSG(callback_isr == NULL,
 				    "callback not be set from user mode"));
-	return z_impl_ps2_config(dev, callback_isr);
+	Z_OOPS(Z_SYSCALL_VERIFY_MSG(resend_callback_isr == NULL,
+				    "resend callback not be set from user mode"));
+	return z_impl_ps2_config(dev, callback_isr, resend_callback_isr);
 }
 #include <syscalls/ps2_config_mrsh.c>
 

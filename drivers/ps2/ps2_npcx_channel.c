@@ -37,7 +37,8 @@ struct ps2_npcx_ch_config {
 
 /* PS/2 api functions */
 static int ps2_npcx_ch_configure(const struct device *dev,
-				 ps2_callback_t callback_isr)
+				 ps2_callback_t callback_isr,
+				 ps2_resend_callback_t resend_callback_isr)
 {
 	const struct ps2_npcx_ch_config *const config = dev->config;
 	int ret;

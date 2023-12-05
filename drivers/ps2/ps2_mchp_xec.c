@@ -94,7 +94,8 @@ static inline void ps2_xec_girq_en(const struct device *dev)
 #endif /* CONFIG_SOC_SERIES_MEC172X */
 
 static int ps2_xec_configure(const struct device *dev,
-			     ps2_callback_t callback_isr)
+			     ps2_callback_t callback_isr,
+				 ps2_resend_callback_t resend_callback_isr)
 {
 	const struct ps2_xec_config * const config = dev->config;
 	struct ps2_xec_data * const data = dev->data;
