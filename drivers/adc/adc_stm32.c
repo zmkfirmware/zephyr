@@ -1007,8 +1007,6 @@ static void adc_context_on_complete(struct adc_context *ctx, int status)
 
 	ARG_UNUSED(status);
 
-	adc_stm32_disable(adc);
-
 	/* Reset acquisition time used for the sequence */
 	data->acq_time_index = -1;
 
