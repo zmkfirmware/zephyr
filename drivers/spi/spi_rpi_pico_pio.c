@@ -103,6 +103,7 @@ static int spi_pico_pio_configure(const struct spi_pico_pio_config *dev_cfg,
 	const struct gpio_dt_spec *mosi;
 	const struct gpio_dt_spec *clk;
 	pio_sm_config sm_config;
+	bool lsb = false;
 	uint32_t offset;
 	uint32_t wrap_target;
 	uint32_t wrap;
@@ -122,10 +123,13 @@ static int spi_pico_pio_configure(const struct spi_pico_pio_config *dev_cfg,
 		return -ENOTSUP;
 	}
 
-	if (spi_cfg->operation & SPI_TRANSFER_LSB) {
-		LOG_ERR("Unsupported configuration");
-		return -ENOTSUP;
-	}
+        /* Note that SPI_TRANSFER_LSB controls the direction of shift, not the */
+        /* "endianness" of the data.  In MSB mode, the high-order bit of the   */
+        /* most significant byte is sent first;  in LSB mode, the low-order    */
+        /* bit of the least-significant byte is sent first.                    */
+        if (spi_cfg->operation & SPI_TRANSFER_LSB) {
+                lsb = true;
+        }
 
 #if defined(CONFIG_SPI_EXTENDED_MODES)
 	if (spi_cfg->operation & (SPI_LINES_DUAL | SPI_LINES_QUAD | SPI_LINES_OCTAL)) {
@@ -199,9 +203,9 @@ static int spi_pico_pio_configure(const struct spi_pico_pio_config *dev_cfg,
 
 	sm_config_set_clkdiv(&sm_config, clock_div);
 	sm_config_set_in_pins(&sm_config, miso->pin);
-	sm_config_set_in_shift(&sm_config, false, true, bits);
+	sm_config_set_in_shift(&sm_config, lsb, true, bits);
 	sm_config_set_out_pins(&sm_config, mosi->pin, 1);
-	sm_config_set_out_shift(&sm_config, false, true, bits);
+	sm_config_set_out_shift(&sm_config, lsb, true, bits);
 	sm_config_set_sideset_pins(&sm_config, clk->pin);
 	sm_config_set_sideset(&sm_config, 1, false, false);
 	sm_config_set_wrap(&sm_config, offset + wrap_target, offset + wrap);
