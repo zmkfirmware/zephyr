@@ -39,6 +39,11 @@ if(CONFIG_NANOPB)
   )
 
   zephyr_compile_definitions_ifdef(
+    CONFIG_NANOPB_NO_ENCODE_SIZE_CHECK
+    PB_NO_ENCODE_SIZE_CHECK
+  )
+
+  zephyr_compile_definitions_ifdef(
     CONFIG_NANOPB_ENCODE_ARRAYS_UNPACKED
     PB_ENCODE_ARRAYS_UNPACKED
   )
