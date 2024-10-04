@@ -32,6 +32,8 @@
 /* Disable binary info */
 #define PICO_NO_BINARY_INFO 1
 
+#define PICO_XOSC_STARTUP_DELAY_MULTIPLIER 64
+
 /* Zephyr compatible way of forcing inline */
 #ifndef __always_inline
 #define __always_inline ALWAYS_INLINE
