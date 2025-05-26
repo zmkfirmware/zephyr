@@ -369,7 +369,7 @@ static int baudrate_set(const struct device *dev, uint32_t baudrate)
 
 	/* scale baudrate setting */
 	if (config->clock_freq > 0U) {
-		nrf_baudrate /= config->clock_freq / NRF_UARTE_BASE_FREQUENCY_16MHZ;
+		nrf_baudrate /= config->clock_freq / NRF_TIMER_BASE_FREQUENCY_16MHZ;
 	}
 
 	nrf_uarte_baudrate_set(uarte, nrf_baudrate);
