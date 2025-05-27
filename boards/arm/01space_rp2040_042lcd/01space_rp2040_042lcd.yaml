@@ -1,5 +1,5 @@
-identifier: seeeduino_xiao_rp2040
-name: Seeeduino XIAO RP2040
+identifier: 01space_rp2040_042lcd
+name: 01Space RP2040 0.42 LCD
 type: mcu
 arch: arm
 flash: 2048
