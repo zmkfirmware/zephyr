@@ -97,20 +97,20 @@
 };
 
 &eusart0 {
-	compatible = "silabs,eusart-uart";
+	compatible = "silabs,eusart-spi";
 	pinctrl-0 = <&eusart0_default>;
 	pinctrl-names = "default";
-	current-speed = <115200>;
+	#address-cells = <1>;
+	#size-cells = <0>;
+	clock-frequency = <4000000>;
+	cs-gpios = <&gpioc 7 GPIO_ACTIVE_LOW>;
 };
 
 &eusart1 {
-	compatible = "silabs,eusart-spi";
+	compatible = "silabs,eusart-uart";
+	current-speed = <115200>;
 	pinctrl-0 = <&eusart1_default>;
 	pinctrl-names = "default";
-	cs-gpios = <&gpioc 7 GPIO_ACTIVE_LOW>;
-	clock-frequency = <4000000>;
-	#address-cells = <1>;
-	#size-cells = <0>;
 };
 
 &i2c0 {
