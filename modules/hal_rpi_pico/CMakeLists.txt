@@ -56,7 +56,6 @@ if(CONFIG_HAS_RPI_PICO)
     ${rp2_common_dir}/hardware_xosc/xosc.c
     ${rp2_common_dir}/hardware_watchdog/watchdog.c
     ${rp2_common_dir}/pico_platform/platform.c
-    ${rp2_common_dir}/pico_bootrom/bootrom.c
   )
 
   zephyr_include_directories(
@@ -69,12 +68,10 @@ if(CONFIG_HAS_RPI_PICO)
     ${rp2_common_dir}/hardware_sync/include
     ${rp2_common_dir}/hardware_timer/include
     ${rp2_common_dir}/hardware_resets/include
-    ${rp2_common_dir}/pico_bootrom/include
     ${rp2040_dir}/hardware_regs/include
     ${rp2040_dir}/hardware_structs/include
     ${common_dir}/pico_base/include
     ${rp2_common_dir}/pico_platform/include
-    ${rp2_common_dir}/pico_bootrom/include
     ${CMAKE_CURRENT_LIST_DIR}
   )
 
@@ -115,6 +112,11 @@ if(CONFIG_HAS_RPI_PICO)
           ${rp2_common_dir}/hardware_claim/claim.c)
   zephyr_include_directories_ifdef(CONFIG_PICOSDK_USE_CLAIM
           ${rp2_common_dir}/hardware_claim/include)
+
+  zephyr_library_sources_ifdef(CONFIG_PICOSDK_USE_PICO_BOOTROM
+          ${rp2_common_dir}/pico_bootrom/bootrom.c)
+  zephyr_include_directories_ifdef(CONFIG_PICOSDK_USE_PICO_BOOTROM
+          ${rp2_common_dir}/pico_bootrom/include)
 
   # Some flash driver functions must be executed from the RAM.
   # Originally pico-sdk places them in the RW data section, so this

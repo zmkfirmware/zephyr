@@ -15,6 +15,18 @@ config STM32_BACKUP_SRAM
 	help
 	  Enable support for STM32 backup SRAM.
 
+
+DT_COMPAT_ST_STM32_BOOTLOADER := st,stm32-bootloader
+config HAS_STM32_BOOTLOADER
+	def_bool $(dt_compat_enabled,$(DT_COMPAT_ST_STM32_BOOTLOADER))
+
+config STM32_BOOTLOADER
+	bool "STM32 Bootloader Support"
+	default HAS_STM32_BOOTLOADER
+	depends on RETENTION_BOOT_MODE
+	help
+	  Enable support for jumping into the STM32 when the bootmode is set.
+
 config USE_STM32_ASSERT
 	depends on ASSERT
 	bool "STM32Cube HAL and LL drivers asserts"

@@ -17,6 +17,13 @@ config RP2_REQUIRES_SECOND_STAGE_BOOT
 	bool
 	default y if FLASH_LOAD_OFFSET = 0x100
 
+
+config RP2_BOOTLOADER
+	bool
+	default y
+	depends on RETENTION_BOOT_MODE
+	select PICOSDK_USE_PICO_BOOTROM
+
 # Flash type used by the SoC. The board should select the one used.
 
 config RP2_FLASH_W25Q080
