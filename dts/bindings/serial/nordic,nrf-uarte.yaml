@@ -3,3 +3,13 @@ description: Nordic nRF family UARTE (UART with EasyDMA)
 compatible: "nordic,nrf-uarte"
 
 include: ["nordic,nrf-uart-common.yaml", "memory-region.yaml"]
+
+properties:
+  half-duplex:
+    type: boolean
+    description: >
+      Specifies whether the UARTE instance is configured for half-duplex operation.
+      In half-duplex mode, the same physical line is used for both transmission and reception,
+      but not simultaneously. **This feature is implemented on software and TX collision may damage
+      the controller.** Application is responsible to avoid TX collision and the circuit should
+      implement protection from TX collision for unexpected situations.

@@ -88,6 +88,26 @@ LOG_MODULE_REGISTER(uart_nrfx_uarte, CONFIG_UART_LOG_LEVEL);
 #define UARTE_HAS_FRAME_TIMEOUT 1
 #endif
 
+#define IS_HALF_DUPLEX(unused, prefix, i, _)                                                       \
+	(IS_ENABLED(CONFIG_HAS_HW_NRF_UARTE##prefix##i) && DT_PROP_OR(UARTE(i), half_duplex, 0))
+
+#if UARTE_FOR_EACH_INSTANCE(IS_HALF_DUPLEX, (||), (0))
+#define UARTE_HALF_DUPLEX 1
+
+#define IS_HALF_DUPLEX_REQUIREMENT_SATISFIED(unused, prefix, i, _)                                 \
+	(IS_INT_DRIVEN(unused, prefix, i, _) || !IS_HALF_DUPLEX(unused, prefix, i, _))
+BUILD_ASSERT(UARTE_FOR_EACH_INSTANCE(IS_HALF_DUPLEX_REQUIREMENT_SATISFIED, (&&), (1)),
+	     "half-duplex requires interrupt driven mode. Other modes are not supported yet.");
+#endif
+
+#ifdef UARTE_HALF_DUPLEX
+// half-duplex mode uses three pinctrl states
+// - pinctrl-0 (default) for RX mode
+// - pinctrl-2 for TX mode
+#define PINCTRL_STATE_RX PINCTRL_STATE_DEFAULT
+#define PINCTRL_STATE_TX PINCTRL_STATE_PRIV_START
+#endif
+
 /*
  * RX timeout is divided into time slabs, this define tells how many divisions
  * should be made. More divisions - higher timeout accuracy and processor usage.
@@ -180,6 +200,13 @@ struct uarte_nrfx_data {
 #ifdef UARTE_ENHANCED_POLL_OUT
 	uint8_t ppi_ch_endtx;
 #endif
+#ifdef UARTE_HALF_DUPLEX
+	enum {
+		UARTE_MODE_IDLE,
+		UARTE_MODE_TX,
+		UARTE_MODE_RX
+	} pin_mode;
+#endif
 };
 
 #define UARTE_FLAG_LOW_POWER_TX BIT(0)
@@ -248,6 +275,10 @@ struct uarte_nrfx_config {
 #endif
 	uint8_t *poll_out_byte;
 	uint8_t *poll_in_byte;
+
+#ifdef UARTE_HALF_DUPLEX
+	bool half_duplex;
+#endif
 };
 
 static inline NRF_UARTE_Type *get_uarte_instance(const struct device *dev)
@@ -271,6 +302,65 @@ static void endtx_isr(const struct device *dev)
 	irq_unlock(key);
 
 }
+
+#ifdef UARTE_HALF_DUPLEX
+
+static int switch_to_tx_mode(const struct device *dev)
+{
+	struct uarte_nrfx_data *data = dev->data;
+	const struct uarte_nrfx_config *config = dev->config;
+	NRF_UARTE_Type *uarte = get_uarte_instance(dev);
+
+	if (data->pin_mode == UARTE_MODE_TX) {
+		return 0;
+	}
+	if (data->pin_mode == UARTE_MODE_IDLE) { // Resume from IDLE state should be in PM action
+		return -ECANCELED;
+	}
+	// NOTE: application is responsible to ensure no ongoing RX
+	nrf_uarte_task_trigger(uarte, NRF_UARTE_TASK_STOPRX);
+	// NOTE: disabling uart might be practically not required
+	nrf_uarte_disable(uarte);
+	int ret = pinctrl_apply_state(config->pcfg, PINCTRL_STATE_TX);
+	if (ret < 0) {
+		LOG_WRN("Failed to apply PINCTRL_STATE_TX");
+		return ret;
+	}
+	data->pin_mode = UARTE_MODE_TX;
+
+	nrf_uarte_enable(uarte);
+	return 0;
+}
+
+static int switch_to_rx_mode(const struct device *dev)
+{
+	struct uarte_nrfx_data *data = dev->data;
+	const struct uarte_nrfx_config *config = dev->config;
+	NRF_UARTE_Type *uarte = get_uarte_instance(dev);
+
+	if (data->pin_mode == UARTE_MODE_RX) {
+		return 0;
+	}
+	if (data->pin_mode == UARTE_MODE_IDLE) { // Resume from IDLE state should be in PM action
+		return -ECANCELED;
+	}
+	nrf_uarte_disable(uarte);
+	int ret = pinctrl_apply_state(config->pcfg, PINCTRL_STATE_RX);
+	if (ret < 0) {
+		LOG_WRN("Failed to apply PINCTRL_STATE_RX");
+		return ret;
+	}
+	data->pin_mode = UARTE_MODE_RX;
+
+	nrf_uarte_enable(uarte);
+	if (!config->disable_rx) {
+		nrf_uarte_event_clear(uarte, NRF_UARTE_EVENT_ENDRX);
+		nrf_uarte_task_trigger(uarte, NRF_UARTE_TASK_STARTRX);
+	}
+	return 0;
+}
+
+#endif /* UARTE_HALF_DUPLEX */
 
 #ifdef UARTE_ANY_NONE_ASYNC
 /**
@@ -328,6 +418,11 @@ static void uarte_nrfx_isr_int(const void *arg)
 			nrf_uarte_int_disable(uarte,
 					      NRF_UARTE_INT_TXSTOPPED_MASK);
 			data->int_driven->disable_tx_irq = false;
+#ifdef UARTE_HALF_DUPLEX
+			if (config->half_duplex) {
+				switch_to_rx_mode(dev);
+			}
+#endif
 			return;
 		}
 
@@ -1740,8 +1835,15 @@ static int uarte_nrfx_fifo_read(const struct device *dev,
 static void uarte_nrfx_irq_tx_enable(const struct device *dev)
 {
 	NRF_UARTE_Type *uarte = get_uarte_instance(dev);
+	const struct uarte_nrfx_config *config = dev->config;
 	struct uarte_nrfx_data *data = dev->data;
 	unsigned int key = irq_lock();
+
+#ifdef UARTE_HALF_DUPLEX
+	if (config->half_duplex) {
+		switch_to_tx_mode(dev);
+	}
+#endif
 
 	data->int_driven->disable_tx_irq = false;
 	data->int_driven->tx_irq_enabled = true;
@@ -1757,6 +1859,8 @@ static void uarte_nrfx_irq_tx_disable(const struct device *dev)
 	/* TX IRQ will be disabled after current transmission is finished */
 	data->int_driven->disable_tx_irq = true;
 	data->int_driven->tx_irq_enabled = false;
+
+	// NOTE: switch_to_rx_mode is done in IRQ at the end of transmission
 }
 
 /** Interrupt driven transfer ready function */
@@ -1913,8 +2017,8 @@ static int uarte_instance_init(const struct device *dev,
 	NRF_UARTE_Type *uarte = get_uarte_instance(dev);
 	const struct uarte_nrfx_config *cfg = dev->config;
 
-#if	defined(CONFIG_UART_USE_RUNTIME_CONFIGURE) || defined(UARTE_ENHANCED_POLL_OUT) || \
-	defined(UARTE_ANY_ASYNC)
+#if defined(CONFIG_UART_USE_RUNTIME_CONFIGURE) || defined(UARTE_ENHANCED_POLL_OUT) ||              \
+	defined(UARTE_ANY_ASYNC) || defined(UARTE_HALF_DUPLEX)
 	struct uarte_nrfx_data *data = dev->data;
 #endif
 
@@ -1929,6 +2033,12 @@ static int uarte_instance_init(const struct device *dev,
 	if (err < 0) {
 		return err;
 	}
+
+#ifdef UARTE_HALF_DUPLEX
+	if (cfg->half_duplex) {
+		data->pin_mode = UARTE_MODE_RX;
+	}
+#endif
 
 #ifdef CONFIG_UART_USE_RUNTIME_CONFIGURE
 	err = uarte_nrfx_configure(dev, &data->uart_config);
@@ -2047,6 +2157,12 @@ static int uarte_nrfx_pm_action(const struct device *dev,
 			return ret;
 		}
 
+#ifdef UARTE_HALF_DUPLEX
+		if (cfg->half_duplex) {
+			data->pin_mode = UARTE_MODE_RX;
+		}
+#endif
+
 		nrf_uarte_enable(uarte);
 
 #ifdef UARTE_ANY_ASYNC
@@ -2118,6 +2234,12 @@ static int uarte_nrfx_pm_action(const struct device *dev,
 
 		wait_for_tx_stopped(dev);
 		uarte_disable_locked(dev, UARTE_FLAG_LOW_POWER_TX | UARTE_FLAG_LOW_POWER_RX, 0);
+
+#ifdef UARTE_HALF_DUPLEX
+		if (cfg->half_duplex) {
+			data->pin_mode = UARTE_MODE_IDLE;
+		}
+#endif
 
 		ret = pinctrl_apply_state(cfg->pcfg, PINCTRL_STATE_SLEEP);
 		if (ret < 0) {
@@ -2242,6 +2364,7 @@ static int uarte_nrfx_pm_action(const struct device *dev,
 		IF_ENABLED(CONFIG_UART_##idx##_NRF_HW_ASYNC,		       \
 			(.timer = NRFX_TIMER_INSTANCE(			       \
 				CONFIG_UART_##idx##_NRF_HW_ASYNC_TIMER),))     \
+                .half_duplex = DT_PROP_OR(UARTE(idx), half_duplex, false), \
 	};								       \
 	static int uarte_##idx##_init(const struct device *dev)		       \
 	{								       \
