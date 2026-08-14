@@ -174,7 +174,7 @@ int lll_conn_central_is_abort_cb(void *next, void *curr,
 	 * exchanged.
 	 */
 	if ((next == curr) && (trx_cnt < 1U)) {
-		return -EBUSY;
+		return -ECANCELED;
 	}
 
 	return -ECANCELED;
@@ -196,7 +196,7 @@ int lll_conn_peripheral_is_abort_cb(void *next, void *curr,
 	 * been exchanged.
 	 */
 	if ((next == curr) && (tx_cnt < 1U)) {
-		return -EBUSY;
+		return -ECANCELED;
 	}
 
 	return -ECANCELED;
