@@ -1,0 +1,58 @@
+# Copyright (c) 2026 Peter Johanson
+# SPDX-License-Identifier: Apache-2.0
+
+description: |
+  Worldsemi WS2812 LED strip, STM32 timer/PWM via DMA
+
+  Driver bindings for controlling a WS2812 or compatible LED
+  strip with an STM32 timer in PWM mode with DMA to load compare
+  values for sending the correct data
+
+compatible: "worldsemi,ws2812-stm32-timer"
+
+include: [ws2812.yaml, base.yaml]
+
+properties:
+
+  pwms:
+    type: phandle-array
+
+  dmas:
+    description: The DMA device and channel to use for the compare sequence
+  dmas:
+    description: |
+      Required TX dma specifiers.  Each specifier will have a phandle
+      reference to the dmac controller, the channel number, and peripheral
+      trigger source.
+
+      For example
+         dmas = <&dmac 0 0xb>;
+
+  dma-names:
+    description: |
+      Required if the dmas property exists.  This should be "tx"
+      to match the dmas property.
+
+      For example
+         dma-names = "tx";
+
+  reset-codes:
+    type: int
+    required: true
+    description: Duration of a reset, as a multiple of the code period ns.
+
+  code-period-ns:
+    type: int
+    required: true
+    description: Length of a given 0/1 code in nanoseconds.
+
+  zero-high-ns:
+    type: int
+    required: true
+    description: Length of a 0 code high time in nanoseconds.
+
+  one-high-ns:
+    type: int
+    required: true
+    description: Length of a 1 code high time in nanoseconds.
+
